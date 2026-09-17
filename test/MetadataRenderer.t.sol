@@ -2,6 +2,7 @@
 pragma solidity 0.8.30;
 
 import { IERC4906 } from "@openzeppelin/contracts/interfaces/IERC4906.sol";
+import { Base64 } from "@openzeppelin/contracts/utils/Base64.sol";
 
 import { ArcalsMetadataRenderer } from "../src/ArcalsMetadataRenderer.sol";
 import { IArcalsErrors } from "../src/interfaces/IArcalsErrors.sol";
@@ -10,13 +11,14 @@ import { ArcalsTestBase } from "./ArcalsContracts.t.sol";
 contract MetadataRendererTest is ArcalsTestBase {
     string private piFixture;
     ArcalsMetadataRenderer private renderer;
+    string private constant IMAGE_BASE = "https://api.arcals.fun/v1/arcals/";
 
     function setUp() public override {
         piFixture = vm.readFile(
             string.concat(vm.projectRoot(), "/test/fixtures/pi/sparse-membership-v1.json")
         );
         super.setUp();
-        renderer = new ArcalsMetadataRenderer(address(mirror));
+        renderer = new ArcalsMetadataRenderer(address(mirror), IMAGE_BASE);
     }
 
     function _buildContentFixture() internal override {
@@ -78,8 +80,32 @@ contract MetadataRendererTest is ArcalsTestBase {
         assertEq(mirror.tokenURI(id), builtin);
     }
 
+    function testUnregisteredArcalsPointToIdenticalOffchainArtwork() public {
+        (uint256 id,) = _mint(makeAddr("minter"));
+        assertEq(renderer.imageURI(id), "https://api.arcals.fun/v1/arcals/1/image.svg");
+        _register(id);
+        assertEq(
+            renderer.imageURI(id),
+            string.concat(
+                "data:image/svg+xml;base64,", Base64.encode(bytes(_golden("arcal-1.svg")))
+            )
+        );
+
+        // Without a base URL every Arcal stays fully on-chain.
+        ArcalsMetadataRenderer onchainOnly = new ArcalsMetadataRenderer(address(mirror), "");
+        _setIssued(500_000, core.RESERVE_COUNT() - 1);
+        core.mintReserve(1);
+        assertEq(
+            onchainOnly.imageURI(1_000_000),
+            string.concat(
+                "data:image/svg+xml;base64,",
+                Base64.encode(bytes(_golden("unregistered-1000000.svg")))
+            )
+        );
+    }
+
     function testRendererRejectsZeroMirror() public {
         vm.expectRevert(IArcalsErrors.ZeroAddress.selector);
-        new ArcalsMetadataRenderer(address(0));
+        new ArcalsMetadataRenderer(address(0), IMAGE_BASE);
     }
 }

@@ -19,7 +19,8 @@ import { ArcalsTypes } from "../src/shared/ArcalsTypes.sol";
 ///      ARCALS_LAUNCH_AUTHORITY, ARCALS_RESERVE_RECIPIENT (all Safe contracts), ARCALS_EPOCH_PUBLISHER,
 ///      ARCALS_ISSUER_SIGNER, ARCALS_VERIFIER_SIGNER, ARCALS_SIGNER_VERSION,
 ///      ARCALS_WORK_GENESIS_TIME, ARCALS_DATASET_ROOT (production Pi dataset root), and the initial work
-///      config ARCALS_ALGORITHM_ID, ARCALS_PARAMETER_DIGEST, ARCALS_TARGET.
+///      config ARCALS_ALGORITHM_ID, ARCALS_PARAMETER_DIGEST, ARCALS_TARGET, and ARCALS_IMAGE_BASE_URL
+///      (e.g. https://api.arcals.fun/v1/arcals/) for unregistered artwork.
 contract DeployArcMainnet is Script {
     uint256 private constant ARC_MAINNET_CHAIN_ID = 5042;
     // Indices into ArcalsDeploymentFactory.deploy's returned address[8].
@@ -51,7 +52,8 @@ contract DeployArcMainnet is Script {
         bytes[] memory codes = ArcalsDeploymentPlan.creationCodes(factory, expected);
         deployed = factory.deploy(codes, expected);
         registrar = new ArcalsContentRegistrar(deployed[MIRROR]);
-        renderer = new ArcalsMetadataRenderer(deployed[MIRROR]);
+        renderer =
+            new ArcalsMetadataRenderer(deployed[MIRROR], vm.envString("ARCALS_IMAGE_BASE_URL"));
         vm.stopBroadcast();
 
         bytes32[7] memory planned = ArcalsDeploymentPlan.creationCodeHashes(factory, expected);

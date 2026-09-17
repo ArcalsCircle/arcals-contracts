@@ -8,15 +8,20 @@ import { ArcalMirror } from "./ArcalMirror.sol";
 import { IArcalsErrors } from "./interfaces/IArcalsErrors.sol";
 import { IArcalsMetadataRenderer } from "./interfaces/IArcalsMetadataRenderer.sol";
 
-/// @notice Fully on-chain artwork for Arcals. Each registered Arcal is drawn as a ring of its 360
+/// @notice Artwork for Arcals. Each registered Arcal is drawn fully on-chain as a ring of its 360
 ///         Pi digits, one digit per degree clockwise from the top, with an inner tick per degree
-///         whose length and brightness follow that digit. Unregistered Arcals show the bare ring.
+///         whose length and brightness follow that digit. Before its content is registered the
+///         digits are not on-chain yet, so metadata points to `imageBaseUrl`, which serves the
+///         byte-identical artwork; marketplaces that cache the first metadata never keep a bare
+///         ring. With an empty `imageBaseUrl` unregistered Arcals show the bare ring on-chain.
 /// @dev Stateless and replaceable: governance points the Mirror at a new renderer to change the
 ///      artwork, and the Mirror falls back to built-in metadata if this contract fails.
 contract ArcalsMetadataRenderer is IArcalsMetadataRenderer, IArcalsErrors {
     using Strings for uint256;
 
     ArcalMirror public immutable mirror;
+    /// @notice Prefix of the off-chain image for unregistered Arcals: `<imageBaseUrl><id>/image.svg`.
+    string public imageBaseUrl;
 
     /// @dev Per degree: int16 sin * 1e4, then int16 -cos * 1e4 (screen coordinates, y down).
     bytes private constant TRIG =
@@ -36,9 +41,10 @@ contract ArcalsMetadataRenderer is IArcalsMetadataRenderer, IArcalsErrors {
     string private constant SVG_HEAD =
         "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 1000 1000'><defs><linearGradient id='s' x1='38' y1='8' x2='962' y2='932' gradientUnits='userSpaceOnUse'><stop stop-color='#5b6875'/><stop offset='.3' stop-color='#fff'/><stop offset='.6' stop-color='#3a4550'/><stop offset='.8' stop-color='#eef5fb'/><stop offset='1' stop-color='#8a98a6'/></linearGradient><filter id='g' x='-50%' y='-50%' width='200%' height='200%'><feGaussianBlur stdDeviation='10'/></filter></defs><rect width='1000' height='1000' fill='#030405'/><circle cx='500' cy='470' r='462' fill='none' stroke='#b9cbdc' stroke-opacity='.16' stroke-width='12' filter='url(#g)'/><circle cx='500' cy='470' r='462' fill='none' stroke='url(#s)' stroke-width='2'/>";
 
-    constructor(address mirror_) {
+    constructor(address mirror_, string memory imageBaseUrl_) {
         if (mirror_ == address(0)) revert ZeroAddress();
         mirror = ArcalMirror(mirror_);
+        imageBaseUrl = imageBaseUrl_;
     }
 
     function tokenURI(uint256 id) external view override returns (string memory) {
@@ -50,8 +56,8 @@ contract ArcalsMetadataRenderer is IArcalsMetadataRenderer, IArcalsErrors {
                 id.toString(),
                 '","description":"',
                 DESCRIPTION,
-                '","external_url":"https://arcals.fun","image":"data:image/svg+xml;base64,',
-                Base64.encode(bytes(imageSVG(id))),
+                '","external_url":"https://arcals.fun","image":"',
+                imageURI(id),
                 '"'
             ),
             string.concat(
@@ -94,6 +100,16 @@ contract ArcalsMetadataRenderer is IArcalsMetadataRenderer, IArcalsErrors {
                 )
             )
         );
+    }
+
+    /// @notice The image field of the token metadata: an on-chain SVG data URI once content is
+    ///         registered (or when no base URL is set), otherwise the off-chain image URL.
+    function imageURI(uint256 id) public view returns (string memory) {
+        if (!mirror.contentRegistered(id) && bytes(imageBaseUrl).length != 0) {
+            mirror.piRange(id);
+            return string.concat(imageBaseUrl, id.toString(), "/image.svg");
+        }
+        return string.concat("data:image/svg+xml;base64,", Base64.encode(bytes(imageSVG(id))));
     }
 
     /// @notice The raw SVG artwork for an Arcal ID.
